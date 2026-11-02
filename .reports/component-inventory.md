@@ -13,25 +13,104 @@ and `po/POTFILES.in` (which names every user-facing source file).
 | | Upstream | `ruby` branch |
 |---|---:|---:|
 | Blueprint templates / named roots | 36 files, 38 roots | 0 (house style has no `.ui`) |
-| GMenu models | 10 (3 `.ui` + 7 inline in `.blp`) | 0 |
+| GMenu models | 10 (3 `.ui` + 7 inline in `.blp`) | 6 (app menu, tab menus, view menu, pathbar context menu, column-chooser row menu) |
 | Action groups | 7 (`app.`, `win.`, `slot.`, `view.`, `pathbar.`, `row.`, `dialog.`, `column-chooser.`, `chooser.`, `preferences.`, `search-popover.`, `listitem.`) | 0 |
-| Distinct actions | 123 | 0 |
-| Keyboard shortcuts in the shortcuts dialog | 56 items in 18 sections | 0 |
+| Distinct actions | 123 | ~30 (all 8 `app.`, all 14 `win.`, most `slot.`; `view.` largely missing) |
+| Keyboard shortcuts in the shortcuts dialog | 56 items in 18 sections | dialog ported (`lib/nautilus/shortcuts_dialog.rb`); only one `set_accels_for_action` site so far |
 | GSettings keys | 11 keys, 10 enums, 3 schemas | 0 |
 | `po/` catalogue | 134 languages, `POTFILES.in` lists 66 `src/*.c` + 36 `.blp`/`.ui` | no `po/` yet |
-| App CSS classes in `src/resources/style.css` | 18 app-defined | 0 |
-| Port `lib/*.rb` files | — | 2 (`nautilus.rb`, `nautilus/application.rb`) |
+| App CSS classes in `src/resources/style.css` | 18 app-defined | 36 classes applied from `lib/`, 12 of the 18 app-defined ones defined in `lib/nautilus/style.rb` |
+| Port `lib/*.rb` files | — | 47 (43 of the 73 component files below, plus `nautilus.rb`, `nautilus/rb/version.rb` and the `file.rb`/`directory.rb` model pair) |
 
-The port is a stub: `lib/nautilus/application.rb` is a `Gtk::Application`
-with one `Adwaita::StatusPage` reading "The Ruby port has not been written
-yet." **Every component below is missing.** The one partial is the
-application class itself, which exists but installs none of its 8 actions.
+Status as of the window-shell/views/first-dialogs port commit: the app
+shell, both file views, the cells, the sidebar, the path bar and nine of
+the dialogs exist on `ruby`; the properties window, the search stack, the
+progress stack, the network stack, the portal file chooser, DnD and the
+remaining dialogs do not. Per-component status:
+
+| Upstream | Port file | Kind | Exists on `ruby` |
+|---|---|---|---|
+| `src/nautilus-application.c` | `lib/nautilus/application.rb` | application class / app actions | yes (176 lines) |
+| `src/resources/ui/nautilus-window.blp + src/nautilus-window.c` | `lib/nautilus/window.rb` | main window | yes (457 lines) |
+| `src/nautilus-window-slot.c` | `lib/nautilus/window_slot.rb` | tab content shell | yes (275 lines) |
+| `src/resources/ui/nautilus-toolbar.blp + .c` | `lib/nautilus/toolbar.rb` | header bar | yes (260 lines) |
+| `src/resources/ui/nautilus-history-controls.blp + .c` | `lib/nautilus/history_controls.rb` | nav buttons + history menus | yes (154 lines) |
+| `src/resources/ui/nautilus-view-controls.blp + .c + menu/nautilus-toolbar-view-menu.ui` | `lib/nautilus/view_controls.rb` | view switcher + view menu | yes (154 lines) |
+| `src/nautilus-sidebar.c` | `lib/nautilus/sidebar.rb` | sidebar | yes (768 lines) |
+| `src/resources/ui/nautilus-sidebar-row.blp + .c` | `lib/nautilus/sidebar_row.rb` | sidebar row | yes (158 lines) |
+| `src/nautilus-pathbar.c + menu/nautilus-pathbar-context-menu.ui` | `lib/nautilus/pathbar.rb` | path bar + its context menu | yes (319 lines) |
+| `src/nautilus-location-entry.c` | `lib/nautilus/location_entry.rb` | location entry | yes (226 lines) |
+| `src/resources/ui/nautilus-files-view.blp + .c + menu/nautilus-files-view-context-menus.ui` | `lib/nautilus/files_view.rb` | files view + context menus | yes (916 lines) |
+| `src/nautilus-list-base.c` | `lib/nautilus/list_base.rb` | shared view base | yes (207 lines) |
+| `src/nautilus-list-view.c` | `lib/nautilus/list_view.rb` | list view | yes (210 lines) |
+| `src/nautilus-grid-view.c` | `lib/nautilus/grid_view.rb` | grid view | yes (136 lines) |
+| `src/nautilus-network-view.c` | `lib/nautilus/network_view.rb` | network view | no |
+| `src/nautilus-view-cell.c` | `lib/nautilus/view_cell.rb` | cell base | yes (102 lines) |
+| `src/nautilus-grid-cell.c + .blp` | `lib/nautilus/grid_cell.rb` | grid cell | yes (187 lines) |
+| `src/nautilus-name-cell.c + .blp` | `lib/nautilus/name_cell.rb` | name cell | yes (221 lines) |
+| `src/nautilus-label-cell.c` | `lib/nautilus/label_cell.rb` | label cell | yes (48 lines) |
+| `src/nautilus-star-cell.c` | `lib/nautilus/star_cell.rb` | star cell | yes (87 lines) |
+| `src/nautilus-network-cell.c + .blp` | `lib/nautilus/network_cell.rb` | network cell | no |
+| `src/nautilus-minimal-cell.c` | `lib/nautilus/minimal_cell.rb` | minimal cell data object | yes (24 lines) |
+| `src/nautilus-image.c` | `lib/nautilus/image.rb` | icon/thumbnail widget | yes (103 lines) |
+| `src/nautilus-query-editor.c` | `lib/nautilus/query_editor.rb` | search bar | no |
+| `src/resources/ui/nautilus-search-popover.blp + .c` | `lib/nautilus/search_popover.rb` | search filters popover | no |
+| `src/resources/ui/nautilus-search-types-dialog.blp` | `lib/nautilus/search_types_dialog.rb` | file-types dialog | no |
+| `src/resources/ui/nautilus-date-range-dialog.blp + .c` | `lib/nautilus/date_range_dialog.rb` | date range dialog | no |
+| `src/resources/ui/nautilus-date-entry-row.blp + .c` | `lib/nautilus/date_entry_row.rb` | date entry row | no |
+| `src/nautilus-preferences-dialog.c + .blp` | `lib/nautilus/preferences_dialog.rb` | preferences dialog | yes (289 lines) |
+| `src/resources/ui/shortcuts-dialog.blp` | `lib/nautilus/shortcuts_dialog.rb` | keyboard shortcuts dialog | yes (167 lines) |
+| `src/nautilus-properties.c + nautilus-properties-window.blp` | `lib/nautilus/properties.rb` | properties window | no |
+| `src/resources/ui/nautilus-properties-widget.blp` | `lib/nautilus/properties_widget.rb` | properties widget | no |
+| `src/resources/ui/nautilus-file-properties-change-permissions.blp` | `lib/nautilus/change_permissions_dialog.rb` | enclosed-permissions dialog | no |
+| `src/nautilus-new-folder-dialog.c + .blp` | `lib/nautilus/new_folder_dialog.rb` | new folder dialog | yes (125 lines) |
+| `src/nautilus-compress-dialog.c + .blp` | `lib/nautilus/compress_dialog.rb` | compress dialog | no |
+| `src/nautilus-batch-rename-dialog.c + .blp` | `lib/nautilus/batch_rename_dialog.rb` | batch rename dialog | no |
+| `src/nautilus-batch-rename-item.c` | `lib/nautilus/batch_rename_item.rb` | batch rename preview row model | yes (55 lines) |
+| `src/nautilus-rename-file-popover.c + .blp` | `lib/nautilus/rename_file_popover.rb` | rename popover | yes (156 lines) |
+| `src/nautilus-column-chooser.c + .blp` | `lib/nautilus/column_chooser.rb` | column chooser dialog | yes (246 lines) |
+| `src/nautilus-grid-view-captions-dialog.c + .blp` | `lib/nautilus/grid_view_captions_dialog.rb` | grid captions dialog | yes (112 lines) |
+| `src/resources/ui/nautilus-files-view-select-items.blp` | `lib/nautilus/select_items_dialog.rb` | select-items dialog | yes (121 lines) |
+| `src/nautilus-app-chooser.c + .blp` | `lib/nautilus/app_chooser.rb` | open-with dialog | no |
+| `src/nautilus-app-chooser-widget.c + .blp` | `lib/nautilus/app_chooser_widget.rb` | app list + empty state | no |
+| `src/nautilus-file-conflict-dialog.c + .blp` | `lib/nautilus/file_conflict_dialog.rb` | file conflict dialog | no |
+| `src/nautilus-operations-ui-manager.c + -request-passphrase.blp` | `lib/nautilus/operations_ui_manager.rb` | passphrase prompt + conflict orchestration | no |
+| `src/nautilus-dialog-utilities.c` | `lib/nautilus/dialog_utilities.rb` | generic alert dialogs | yes (126 lines) |
+| `src/nautilus-error-reporting.c` | `lib/nautilus/error_reporting.rb` | error states | yes (117 lines) |
+| `src/nautilus-mime-actions.c` | `lib/nautilus/mime_actions.rb` | open/launch prompts | yes (237 lines) |
+| `src/nautilus-file-chooser.c + .blp` | `lib/nautilus/file_chooser.rb` | portal file chooser window | no |
+| `src/nautilus-location-banner.c` | `lib/nautilus/location_banner.rb` | 11 location banners | yes (193 lines) |
+| `src/nautilus-floating-bar.c` | `lib/nautilus/floating_bar.rb` | overlay status bar | yes (193 lines) |
+| `src/nautilus-x-content-bar.c` | `lib/nautilus/x_content_bar.rb` | removable-media info bar | no |
+| `src/nautilus-network-address-bar.c + .blp` | `lib/nautilus/network_address_bar.rb` | connect-to-server bar | no |
+| `src/nautilus-recent-servers.c` | `lib/nautilus/recent_servers.rb` | recent servers model | no |
+| `src/nautilus-progress-indicator.c + .blp` | `lib/nautilus/progress_indicator.rb` | operations button + popover | no |
+| `src/nautilus-progress-info-widget.c + .blp` | `lib/nautilus/progress_info_widget.rb` | one operation row | no |
+| `src/nautilus-progress-paintable.c` | `lib/nautilus/progress_paintable.rb` | animated progress icon | no |
+| `src/nautilus-progress-persistence-handler.c` | `lib/nautilus/progress_persistence_handler.rb` | finished-operation notifications | no |
+| `src/nautilus-shortcut-manager.c` | `lib/nautilus/shortcut_manager.rb` | shortcut scope wrapper | no |
+| `src/nautilus-filename-validator.c` | `lib/nautilus/filename_validator.rb` | filename feedback states | yes (282 lines) |
+| `src/nautilus-column-utilities.c` | `lib/nautilus/column_utilities.rb` | list columns | yes (158 lines) |
+| `src/nautilus-global-preferences.c` | `lib/nautilus/global_preferences.rb` | GSettings keys | yes (300 lines) |
+| `src/nautilus-ui-utilities.c` | `lib/nautilus/ui_utilities.rb` | menu + date helpers | yes (248 lines) |
+| `src/nautilus-date-utilities.c` | `lib/nautilus/date_utilities.rb` | date strings | yes (222 lines) |
+| `src/nautilus-previewer.c` | `lib/nautilus/previewer.rb` | Sushi preview client | no |
+| `src/nautilus-dbus-launcher.c` | `lib/nautilus/dbus_launcher.rb` | Console/Disks/Settings launcher | yes (115 lines) |
+| `src/nautilus-file-operations.c` | `lib/nautilus/file_operations.rb` | operations + confirmations | yes (264 lines) |
+| `src/nautilus-file-undo-operations.c` | `lib/nautilus/file_undo_operations.rb` | undo/redo labels | no |
+| `src/nautilus-clipboard.c` | `lib/nautilus/clipboard.rb` | cut/copy/paste | yes (72 lines) |
+| `src/nautilus-dnd.c + nautilus-files-view-dnd.c` | `lib/nautilus/dnd.rb` | drop menus + drag icons | no |
+| `src/nautilus-shell-search-provider.c` | `lib/nautilus/shell_search_provider.rb` | Shell search results | no |
+| `src/nautilus-autorun-software.c` | `lib/nautilus/autorun_software.rb` | autorun confirmation | no |
+| `src/resources/style.css` | `lib/nautilus/style.rb` | 18 app CSS classes | yes (58 lines) |
+
+43 of 73 present, 30 missing.
 
 ---
 
 ## 1. Application and window shell
 
-### `src/nautilus-application.c` → `lib/nautilus/application.rb` (exists, stub)
+### `src/nautilus-application.c` → `lib/nautilus/application.rb` (ported)
 
 Not a widget class; it owns the app actions, the accelerators, the About
 dialog and the preferences entry point.
