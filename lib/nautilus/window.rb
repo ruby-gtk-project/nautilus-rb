@@ -8,6 +8,7 @@ require_relative 'history_controls'
 require_relative 'view_controls'
 require_relative 'ui_utilities'
 require_relative 'global_preferences'
+require_relative 'shortcut_manager'
 
 module Nautilus
   # Window is the main window: the tabs, the sidebar and the header bars.
@@ -94,7 +95,9 @@ module Nautilus
 
     def build
       window.tap do |win|
-        win.content = toast_overlay
+        win.content = shortcut_manager
+
+        shortcut_manager.child = toast_overlay
 
         toast_overlay.child = tab_overview
 
@@ -169,6 +172,8 @@ module Nautilus
         GlobalPreferences.instance.apply_to(win)
       end
     end
+
+    def shortcut_manager = @shortcut_manager ||= ShortcutManager.new
 
     def toast_overlay = @toast_overlay ||= Adwaita::ToastOverlay.new
 

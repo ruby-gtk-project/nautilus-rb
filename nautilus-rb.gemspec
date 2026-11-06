@@ -96,6 +96,39 @@ Gem::Specification.new do |spec|
   spec.executables = ["nautilus"]
   spec.require_paths = ["lib"]
 
+  # Runtime dependencies. This gemspec had none at all: the app's gems were
+  # declared only in nix/Gemfile, so `gem install` produced something that
+  # could not load its own toolkit.
+  spec.add_dependency("gtk4")
+  spec.add_dependency("adwaita")
+  spec.add_dependency("glib2")
+
+  # The GObject Introspection bindings this app needs.
+  #
+  # appstream reads the .appdata.xml for the about dialog and search provider
+  # metadata, ashpd reaches the file-chooser/trash/notification portals
+  # without talking to the services directly, gexiv2 reads image EXIF/IPTC/XMP
+  # for the properties dialog, glycin and libglycin-gtk4 do sandboxed image
+  # decoding for thumbnails and previews, gnome-autoar drives archive
+  # extraction/creation, gnome_desktop supplies thumbnail factory helpers,
+  # gstreamer_pbutils (also GstTag, GstVideo) reads media metadata,
+  # libcloudproviders surfaces cloud-storage integrations in the sidebar, and
+  # tsparql (the Tracker namespace) is the search/indexing backend.
+  #
+  # Each is a loader over one typelib, so it also needs that typelib present
+  # at runtime. flake.nix carries them for the dev shell; a packaged app needs
+  # the distribution's equivalents, which each gem's README names.
+  spec.add_dependency("appstream")
+  spec.add_dependency("ashpd")
+  spec.add_dependency("gexiv2")
+  spec.add_dependency("glycin")
+  spec.add_dependency("gnome-autoar")
+  spec.add_dependency("gnome_desktop")
+  spec.add_dependency("gstreamer_pbutils")
+  spec.add_dependency("libcloudproviders")
+  spec.add_dependency("libglycin-gtk4")
+  spec.add_dependency("tsparql")
+
   # NOTE: It is preferable to list development dependencies in the gemspec due to increased
   #       visibility and discoverability.
   #       However, development dependencies in gemspec will install on
