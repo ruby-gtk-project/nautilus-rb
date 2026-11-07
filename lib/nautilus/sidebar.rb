@@ -2,6 +2,7 @@
 
 require 'adwaita'
 require 'fileutils'
+require 'libcloudproviders'
 require_relative 'sidebar_row'
 require_relative 'ui_utilities'
 require_relative 'dbus_launcher'
@@ -148,7 +149,36 @@ module Nautilus
     end
 
     def places
-      built_in_places + bookmark_places + device_places + network_places
+      built_in_places + bookmark_places + device_places + network_places + cloud_provider_places
+    end
+
+    # Ported from the "Cloud" section nautilus-sidebar.c builds off
+    # CloudProvidersCollector/CloudProvidersAccount: one row per account any
+    # running cloud-storage integration (Nextcloud, ownCloud, …) has
+    # exported over org.freedesktop.CloudProviders. There is no filesystem
+    # URI to navigate to — the row's job upstream is to show status and
+    # host the provider's own menu — so `location` here is the places
+    # root rather than a path, and the row is informational only until a
+    # real provider is running to click through to.
+    def cloud_provider_places
+      cloud_provider_collector.providers.flat_map do |provider|
+        provider.accounts.map do |account|
+          Place.new(
+            label:     account.name,
+            uri:       'recent:///',
+            icon_name: 'folder-remote-symbolic',
+            kind:      :cloud_account,
+            tooltip:   account.status_details || account.name,
+            section:   'Cloud',
+          )
+        end
+      end
+    rescue GLib::Error
+      []
+    end
+
+    def cloud_provider_collector
+      @cloud_provider_collector ||= CloudProviders::Collector.new
     end
 
     # --- Widgets -------------------------------------------------------------

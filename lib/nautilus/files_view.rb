@@ -1,8 +1,10 @@
 # frozen_string_literal: true
 
 require 'adwaita'
+require 'ashpd'
 require 'fileutils'
 require_relative 'directory'
+require_relative 'properties_dialog'
 require_relative 'grid_view'
 require_relative 'list_view'
 require_relative 'floating_bar'
@@ -575,6 +577,8 @@ module Nautilus
           'delete-permanently-shortcut'            => -> { delete_selection },
           'restore-from-trash'                     => -> { restore_selection },
           'empty-trash'                            => -> { empty_trash },
+          'extract-here'                           => -> { extract_selection },
+          'extract-to'                              => -> { extract_selection_to },
           'star'                                   => -> { set_starred(true) },
           'unstar'                                 => -> { set_starred(false) },
           'select-all'                             => -> { current_view.select_all },
@@ -587,6 +591,8 @@ module Nautilus
           'visible-columns'                        => -> { show_column_chooser },
           'visible-captions'                       => -> { show_captions_dialog },
           'popup-menu'                             => -> { show_context_menu(selected_files.first, 0, 0) },
+          'properties'                             => -> { show_properties },
+          'current-directory-properties'           => -> { show_directory_properties },
         }
       end
 
@@ -675,6 +681,8 @@ module Nautilus
               files.none?(&:can_trash?),
             'restore-from-trash'                     => !files.empty? && @directory.trash?,
             'empty-trash'                            => @directory.trash?,
+            'extract-here'                           => !files.empty? && files.all?(&:archive?),
+            'extract-to'                              => !files.empty? && files.all?(&:archive?),
             'star'                                   => !files.empty? && files.none?(&:starred?),
             'unstar'                                 => !files.empty? && files.all?(&:starred?),
             'send-email'                             => !files.empty? && files.none?(&:directory?),
@@ -683,6 +691,8 @@ module Nautilus
             'visible-columns'                        => @mode == :list,
             'visible-captions'                       => @mode == :grid,
             'popup-menu'                             => !files.empty?,
+            'properties'                             => !files.empty?,
+            'current-directory-properties'           => true,
           }
         end
       end
@@ -709,6 +719,28 @@ module Nautilus
             reload
           end
         end
+      end
+
+      # view.extract-here: each selected archive extracts into a sibling
+      # folder beside it.
+      def extract_selection
+        FileOperations.extract(selected_files.map(&:location), parent: window) { reload }
+      end
+
+      # view.extract-to: one destination picked once, shared by every
+      # selected archive.
+      def extract_selection_to
+        Gtk::FileDialog.new.tap do |dialog|
+          dialog.title = 'Select Extraction Destination'
+          dialog.select_folder(window, nil) do |_dialog, result|
+            destination = dialog.select_folder_finish(result)
+            unless destination.nil?
+              FileOperations.extract(selected_files.map(&:location), destination: destination, parent: window) { reload }
+            end
+          end
+        end
+      rescue GLib::Error
+        nil
       end
 
       def new_empty_document
@@ -889,12 +921,45 @@ module Nautilus
         end
       end
 
+      # nautilus_files_view_send_email(): upstream builds the same
+      # mailto: URI and hands it to the OpenURI portal via libportal
+      # (xdp_portal_open_uri) rather than a direct GtkUriLauncher, which is
+      # what the sandboxed Flatpak build needs it to go through — a
+      # confined mail client has no other way to be told to open it.
+      # ashpd's OpenUri portal is the bound equivalent; it is tried first,
+      # with GtkUriLauncher as the fallback for a session with no
+      # xdg-desktop-portal running at all.
       def send_email
         selected_files.map { |file| "attach=#{file.uri}" }.join('&').then do |attachments|
-          Gtk::UriLauncher.new("mailto:?#{attachments}").launch(window, nil)
+          uri = "mailto:?#{attachments}"
+          begin
+            Ashpd::OpenUri.open(uri, nil, false)
+          rescue RuntimeError
+            Gtk::UriLauncher.new(uri).launch(window, nil)
+          end
         end
       rescue GLib::Error
         nil
+      end
+
+      # view.properties / view.current-directory-properties: a Properties
+      # window for the first selected file, or for the directory itself
+      # when nothing is selected (the background menu's entry point).
+      def show_properties
+        file = selected_files.first
+        unless file.nil?
+          PropertiesDialog.new(file).tap do |dialog|
+            dialog.build
+            dialog.present(window)
+          end
+        end
+      end
+
+      def show_directory_properties
+        PropertiesDialog.new(Nautilus::File.for_location(@directory.location)).tap do |dialog|
+          dialog.build
+          dialog.present(window)
+        end
       end
 
       def show_column_chooser

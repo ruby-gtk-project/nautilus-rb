@@ -27,7 +27,10 @@
           librsvg
           # Carrying the typelibs for this app's binding gems. gtkStack feeds
           # both buildInputs and typelibPath, so one list does both jobs.
-          appstream
+          # (appstream was removed: upstream never calls into the AppStream
+          # library, only its build-time appstreamcli validator and
+          # adw_about_dialog_new_from_appdata(), which needs no typelib —
+          # see the gemspec's comment above the dependency list.)
           gexiv2_0_16
           libglycin
           libglycin-gtk4

@@ -10,17 +10,6 @@
     };
     version = "4.4.0";
   };
-  appstream = {
-    dependencies = ["gem_kit" "gobject-introspection"];
-    groups = ["default"];
-    platforms = [];
-    source = {
-      remotes = ["https://rubygems.org"];
-      sha256 = "0l9c98aac8ljx7xczglxrhp3wkznfvkn5lpczs7zsv9c531bcbwf";
-      type = "gem";
-    };
-    version = "1.0.0";
-  };
   ashpd = {
     dependencies = ["gem_kit"];
     groups = ["default"];

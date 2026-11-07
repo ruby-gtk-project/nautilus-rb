@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require 'adwaita'
+require 'ashpd'
+require 'gnome-autoar'
 require_relative 'dialog_utilities'
 require_relative 'ui_utilities'
 
@@ -53,15 +55,38 @@ module Nautilus
 
     # nautilus_file_operations_trash_or_delete_sync(): trashing needs no
     # confirmation, since it can be undone.
+    #
+    # Upstream reaches the real trash through GIO's g_file_trash(), which
+    # already goes through the Trash portal when sandboxed (gvfs calls the
+    # same D-Bus interface Ashpd::Trash wraps). This port tries the portal
+    # call first so it works the way a Flatpak build of this app would, and
+    # falls back to the direct GIO call for the common case of a portal-less
+    # session (no xdg-desktop-portal running, e.g. this dev shell) or an
+    # unsandboxed desktop where GIO's own trash implementation is enough.
     def trash(locations, parent: nil, &on_done)
       locations.each do |location|
         begin
-          location.trash
-        rescue GLib::Error => error
+          trash_one(location)
+        rescue GLib::Error, GLib::ErrorInfo => error
           report_trash_error(location, error, parent)
         end
       end
       on_done&.call(locations)
+    end
+
+    def trash_one(location)
+      path = location.path
+      if path
+        Ashpd::Trash.file(path)
+      else
+        location.trash
+      end
+    rescue RuntimeError
+      # The portal call failed (no xdg-desktop-portal, or it refused the
+      # request) — GIO's own trash implementation still works outside a
+      # sandbox, so fall back to it rather than surfacing a portal-specific
+      # error for a feature that still works the ordinary way.
+      location.trash
     end
 
     # nautilus_file_operations_delete(): deleting for good is confirmed
@@ -131,6 +156,47 @@ module Nautilus
     def rename(location, new_name)
       location.set_display_name(new_name)
     end
+
+    # nautilus_file_operations_extract_files(): extract each archive into a
+    # sibling folder named after it (extract-here) or into `destination`
+    # when one is given (extract-to). GnomeAutoar::Extractor does the actual
+    # decompression; it supports every format libarchive does, which is why
+    # upstream uses it rather than shelling out to `tar`/`unzip`.
+    def extract(locations, destination: nil, parent: nil, &on_done)
+      locations.each do |location|
+        target = destination || extract_here_target(location)
+        begin
+          GnomeAutoar::Extractor.new(location, target).start(nil)
+        rescue GLib::Error, RuntimeError => error
+          UiUtilities.show_ok_dialog(
+            "Error while extracting “#{location.basename}”.",
+            error.message,
+            parent,
+          )
+        end
+      end
+      on_done&.call(destination)
+    end
+
+    # Extract-here's target is a folder beside the archive, named after it
+    # with its extension stripped — e.g. "photos.tar.gz" extracts into
+    # "photos" next to it, matching autoarchive's own suggested-name logic.
+    def extract_here_target(location)
+      name = location.basename.sub(/\.(tar\.(gz|bz2|xz)|tgz|zip|7z|rar|gz|bz2|xz)\z/i, '')
+      location.parent.get_child(name)
+    end
+
+    # view.compress is NOT wired to GnomeAutoar::Compressor: its `format`
+    # and `filter` constructor parameters are GnomeAutoar::Format /
+    # GnomeAutoar::Format::Filter, plain C enums with no glib:get-type in
+    # GnomeAutoar-0.1.gir, the same "not a registered GType" problem
+    # DesktopThumbnailSize has (see Image#thumbnail_path). Every value
+    # tried against them — the enum constant, an Integer, a Symbol, a
+    # String, nil — is rejected by gobject-introspection's Ruby loader as
+    # "interface(NilClass(void))", so no AutoarCompressor can be
+    # constructed through this gem. GnomeAutoar::Extractor has no enum
+    # parameters and works (see #extract above); only Compressor is
+    # affected.
 
     # --- The prompts --------------------------------------------------------
 

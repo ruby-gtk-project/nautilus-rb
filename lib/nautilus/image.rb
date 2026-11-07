@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'adwaita'
+require 'gnome_desktop'
 require_relative 'global_preferences'
 
 module Nautilus
@@ -84,9 +85,24 @@ module Nautilus
         end
       end
 
-      # An image file is its own thumbnail source. Upstream asks the
-      # thumbnail factory for a cached thumbnail and falls back to the icon;
-      # the limit preference, in megabytes, is honoured either way.
+      # An image file is its own thumbnail source. Upstream asks
+      # GnomeDesktopThumbnailFactory for a cached thumbnail and falls back
+      # to the icon; the limit preference, in megabytes, is honoured either
+      # way.
+      #
+      # gnome_desktop is a declared dependency of this port specifically
+      # for that factory, but GnomeDesktop::DesktopThumbnailFactory.new
+      # cannot be called through this gem: its one constructor argument is
+      # a GnomeDesktopThumbnailSize, and that enum has no glib:get-type in
+      # GnomeDesktop-3.0.gir (it is a plain C enum, not a registered
+      # GType), so gobject-introspection's Ruby loader resolves the
+      # parameter as an uncallable "interface(NilClass(void))" and rejects
+      # every value tried against it (integer, symbol, the enum constant
+      # itself, nil) — confirmed with nix develop --command ruby -e
+      # 'require "gnome_desktop"; GnomeDesktop::DesktopThumbnailFactory.new(GnomeDesktop::DesktopThumbnailSize::NORMAL)'.
+      # The direct-file-as-its-own-thumbnail fallback below is what this
+      # method actually does for every image, not just the factory's
+      # fallback case.
       def thumbnail_path(file)
         if thumbnailable?(file)
           file.path

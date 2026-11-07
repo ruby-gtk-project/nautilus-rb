@@ -5,6 +5,7 @@ require 'etc'
 require 'json'
 require 'fileutils'
 require 'time'
+require 'tsparql'
 require_relative 'date_utilities'
 require_relative 'global_preferences'
 
@@ -312,6 +313,21 @@ module Nautilus
     end
 
     # Search results carry a relevance rank; anything else ranks at zero.
+    #
+    # Nothing in this port sets it: upstream's search engine
+    # (src/nautilus-search-engine-localsearch.c) runs SPARQL queries
+    # against the localsearch (Tracker) D-Bus service, which is what the
+    # tsparql gem's Tsparql::SparqlConnection is for. It was tried here:
+    # Tsparql::SparqlConnection.bus_new_async(bus_name, nil, nil) { |*args|
+    # ... } reaches a real Gio::Task (confirmed with
+    # nix develop --command ruby -e
+    # 'require "tsparql"; require "gio2"; Tsparql::SparqlConnection.bus_new_async("org.freedesktop.Tracker3.Miner.Files", nil, nil){|*a| p a}'),
+    # but there is no bound `bus_new_finish` (or any `*_finish` method at
+    # all on Tsparql::SparqlConnection) to turn that task into a
+    # connection — Tsparql::SparqlConnection.methods.grep(/finish/) is
+    # empty — so the async handshake this binding requires can never be
+    # completed. A search engine built on it is blocked on that gap, not
+    # written around it.
     attr_writer :search_relevance
 
     def search_relevance = @search_relevance.to_i

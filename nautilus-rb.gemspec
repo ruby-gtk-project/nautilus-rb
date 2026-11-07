@@ -105,20 +105,36 @@ Gem::Specification.new do |spec|
 
   # The GObject Introspection bindings this app needs.
   #
-  # appstream reads the .appdata.xml for the about dialog and search provider
-  # metadata, ashpd reaches the file-chooser/trash/notification portals
-  # without talking to the services directly, gexiv2 reads image EXIF/IPTC/XMP
-  # for the properties dialog, glycin and libglycin-gtk4 do sandboxed image
-  # decoding for thumbnails and previews, gnome-autoar drives archive
-  # extraction/creation, gnome_desktop supplies thumbnail factory helpers,
-  # gstreamer_pbutils (also GstTag, GstVideo) reads media metadata,
-  # libcloudproviders surfaces cloud-storage integrations in the sidebar, and
-  # tsparql (the Tracker namespace) is the search/indexing backend.
+  # ashpd reaches the trash and open-uri portals (FileOperations#trash,
+  # FilesView#send_email) without talking to xdg-desktop-portal directly,
+  # gexiv2 reads image EXIF/IPTC/XMP for the properties dialog
+  # (PropertiesDialog), glycin does sandboxed image decoding for the same
+  # dialog's pixel-size fallback, gnome-autoar drives archive extraction
+  # (FileOperations#extract), and gstreamer_pbutils (also GstTag, GstVideo)
+  # reads audio/video duration and stream info for it too.
+  # libcloudproviders surfaces cloud-storage integrations in the sidebar
+  # (Sidebar#cloud_provider_places).
   #
-  # Each is a loader over one typelib, so it also needs that typelib present
-  # at runtime. flake.nix carries them for the dev shell; a packaged app needs
-  # the distribution's equivalents, which each gem's README names.
-  spec.add_dependency("appstream")
+  # Three of these load but cannot actually be called through this binding,
+  # each confirmed and commented at its call site rather than worked around:
+  # gnome_desktop's DesktopThumbnailFactory, gnome-autoar's Compressor (its
+  # Format/Filter enums have no glib:get-type, so gobject-introspection's
+  # Ruby loader can't marshal them — see Image#thumbnail_path and
+  # FileOperations near #extract) and libglycin-gtk4 (its GlyGtk4::Loader
+  # name collides with gobject-introspection's own bootstrap Loader class —
+  # see PropertiesDialog#glycin_dimensions_text). tsparql loads and reaches
+  # real D-Bus (Tsparql::SparqlConnection.bus_new_async returns a live
+  # Gio::Task) but has no bound `*_finish` method to complete it with — see
+  # the comment on File#search_relevance. appstream was dropped entirely:
+  # upstream never calls into the AppStream library itself, only its
+  # appstreamcli build-time validator (data/meson.build) and its own
+  # metainfo/appdata XML through adw_about_dialog_new_from_appdata(), which
+  # needs no AppStream typelib.
+  #
+  # Each working one is a loader over one typelib, so it also needs that
+  # typelib present at runtime. flake.nix carries them for the dev shell; a
+  # packaged app needs the distribution's equivalents, which each gem's
+  # README names.
   spec.add_dependency("ashpd")
   spec.add_dependency("gexiv2")
   spec.add_dependency("glycin")
