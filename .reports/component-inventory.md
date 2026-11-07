@@ -20,13 +20,15 @@ and `po/POTFILES.in` (which names every user-facing source file).
 | GSettings keys | 11 keys, 10 enums, 3 schemas | 0 |
 | `po/` catalogue | 134 languages, `POTFILES.in` lists 66 `src/*.c` + 36 `.blp`/`.ui` | no `po/` yet |
 | App CSS classes in `src/resources/style.css` | 18 app-defined | 36 classes applied from `lib/`, 12 of the 18 app-defined ones defined in `lib/nautilus/style.rb` |
-| Port `lib/*.rb` files | — | 47 (43 of the 73 component files below, plus `nautilus.rb`, `nautilus/rb/version.rb` and the `file.rb`/`directory.rb` model pair) |
+| Port `lib/*.rb` files | — | 49 (45 of the 73 component files below, plus `nautilus.rb`, `nautilus/rb/version.rb` and the `file.rb`/`directory.rb` model pair) |
 
-Status as of the window-shell/views/first-dialogs port commit: the app
-shell, both file views, the cells, the sidebar, the path bar and nine of
-the dialogs exist on `ruby`; the properties window, the search stack, the
-progress stack, the network stack, the portal file chooser, DnD and the
-remaining dialogs do not. Per-component status:
+Status as of the gem-wiring/recent-servers/shortcut-manager commit
+(`7f203c134`, which landed after this inventory's first pass): the app
+shell, both file views, the cells, the sidebar, the path bar, nine of the
+dialogs, the recent-servers model and the shortcut-manager wrapper exist
+on `ruby`; the properties window, the search stack, the progress stack,
+the network stack, the portal file chooser, DnD and the remaining
+dialogs do not. Per-component status:
 
 | Upstream | Port file | Kind | Exists on `ruby` |
 |---|---|---|---|
@@ -83,12 +85,12 @@ remaining dialogs do not. Per-component status:
 | `src/nautilus-floating-bar.c` | `lib/nautilus/floating_bar.rb` | overlay status bar | yes (193 lines) |
 | `src/nautilus-x-content-bar.c` | `lib/nautilus/x_content_bar.rb` | removable-media info bar | no |
 | `src/nautilus-network-address-bar.c + .blp` | `lib/nautilus/network_address_bar.rb` | connect-to-server bar | no |
-| `src/nautilus-recent-servers.c` | `lib/nautilus/recent_servers.rb` | recent servers model | no |
+| `src/nautilus-recent-servers.c` | `lib/nautilus/recent_servers.rb` | recent servers model | yes (192 lines) |
 | `src/nautilus-progress-indicator.c + .blp` | `lib/nautilus/progress_indicator.rb` | operations button + popover | no |
 | `src/nautilus-progress-info-widget.c + .blp` | `lib/nautilus/progress_info_widget.rb` | one operation row | no |
 | `src/nautilus-progress-paintable.c` | `lib/nautilus/progress_paintable.rb` | animated progress icon | no |
 | `src/nautilus-progress-persistence-handler.c` | `lib/nautilus/progress_persistence_handler.rb` | finished-operation notifications | no |
-| `src/nautilus-shortcut-manager.c` | `lib/nautilus/shortcut_manager.rb` | shortcut scope wrapper | no |
+| `src/nautilus-shortcut-manager.c` | `lib/nautilus/shortcut_manager.rb` | shortcut scope wrapper | yes (24 lines) |
 | `src/nautilus-filename-validator.c` | `lib/nautilus/filename_validator.rb` | filename feedback states | yes (282 lines) |
 | `src/nautilus-column-utilities.c` | `lib/nautilus/column_utilities.rb` | list columns | yes (158 lines) |
 | `src/nautilus-global-preferences.c` | `lib/nautilus/global_preferences.rb` | GSettings keys | yes (300 lines) |
@@ -104,7 +106,7 @@ remaining dialogs do not. Per-component status:
 | `src/nautilus-autorun-software.c` | `lib/nautilus/autorun_software.rb` | autorun confirmation | no |
 | `src/resources/style.css` | `lib/nautilus/style.rb` | 18 app CSS classes | yes (58 lines) |
 
-43 of 73 present, 30 missing.
+45 of 73 present, 28 missing.
 
 ---
 
