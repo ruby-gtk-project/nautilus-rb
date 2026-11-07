@@ -35,8 +35,13 @@ module Nautilus
 
     def icon_size = ICON_SIZES.fetch(zoom_level)
 
+    # FilesView#mode= calls #build every time the view is switched back to,
+    # not only the first time, so this has to be safe to call more than
+    # once: the view and its controller are memoized widgets, and attaching
+    # the same Gtk::GestureClick a second time is a GTK-CRITICAL
+    # (gtk_widget_add_controller's single-parent assertion), not a no-op.
     def build
-      scroller.tap do |window|
+      @built ||= scroller.tap do |window|
         window.child = view
 
         view.tap do |column_view|
