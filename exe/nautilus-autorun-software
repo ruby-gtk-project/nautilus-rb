@@ -1,0 +1,28 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require 'gtk4'
+require 'adwaita'
+require 'nautilus/autorun_software'
+
+# Ported from src/nautilus-autorun-software.c's main(): a standalone helper
+# invoked with a mount URI (the way gnome-settings-daemon's autorun handler
+# invokes it on mount-added), that stays alive only long enough to show the
+# trust prompt and run — or report why it couldn't.
+mount_uri = ARGV[0]
+app = Gtk::Application.new('org.rubygtkproject.Nautilus.AutorunSoftware', [:default_flags])
+app.signal_connect('activate') do
+  if ARGV.length != 1
+    warn "Usage: #{$PROGRAM_NAME} mount-uri"
+    app.quit
+  else
+    begin
+      mount = Gio::File.new_for_commandline_arg(mount_uri).find_enclosing_mount(nil)
+      Nautilus::AutorunSoftware.new(mount, on_closed: -> { app.quit }).present(nil)
+    rescue GLib::ErrorInfo => e
+      warn "Unable to find device for URI: #{e.message}"
+      app.quit
+    end
+  end
+end
+app.run([$PROGRAM_NAME])

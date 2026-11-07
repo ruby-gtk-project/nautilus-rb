@@ -5,6 +5,7 @@ require_relative 'directory'
 require_relative 'files_view'
 require_relative 'location_banner'
 require_relative 'global_preferences'
+require_relative 'x_content_bar'
 
 module Nautilus
   # WindowSlot is one tab's content: the location it shows, the history it
@@ -38,6 +39,7 @@ module Nautilus
 
     def build
       root.tap do |box|
+        box.append(content_bar_slot)
         box.append(location_banner.build)
         box.append(files_view.build)
 
@@ -67,6 +69,10 @@ module Nautilus
     def location_banner
       @location_banner ||= LocationBanner.new(on_empty_trash: -> { files_view.empty_trash })
     end
+
+    # The box the removable-media x-content bar is swapped into, which
+    # stays empty for ordinary locations.
+    def content_bar_slot = @content_bar_slot ||= Gtk::Box.new(:vertical, 0)
 
     def actions = @actions ||= Gio::SimpleActionGroup.new
 
@@ -143,14 +149,31 @@ module Nautilus
         @directory = Directory.new(target)
         files_view.directory = @directory
         location_banner.location = target
+        refresh_content_bar
         @on_title_changed&.call(self)
         refresh_action_availability
       end
 
       def load_location
         location_banner.location = @location
+        refresh_content_bar
         @on_title_changed&.call(self)
         refresh_action_availability
+      end
+
+      # nautilus_window_slot_setup_extra_location_widgets()'s x-content-bar
+      # half: offer to open the mount's content with its registered app
+      # when the current location sits directly on a mount that reports
+      # handleable x-content types (an audio CD, a photo card, …).
+      def refresh_content_bar
+        content_bar_slot.first_child&.then { |child| content_bar_slot.remove(child) }
+        mount = @location.find_enclosing_mount(nil)
+        content_types = mount.guess_content_type_sync(false, nil)
+        if XContentBar.should_handle_content_types?(content_types)
+          content_bar_slot.append(XContentBar.new(mount, content_types).build)
+        end
+      rescue GLib::ErrorInfo
+        nil
       end
 
       # Walking the history moves the current location onto the other list,

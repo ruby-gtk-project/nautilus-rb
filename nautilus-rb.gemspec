@@ -93,7 +93,7 @@ Gem::Specification.new do |spec|
   ]
   spec.bindir = "exe"
   # Listed files are the relative paths from bindir above.
-  spec.executables = ["nautilus"]
+  spec.executables = ["nautilus", "nautilus-autorun-software"]
   spec.require_paths = ["lib"]
 
   # Runtime dependencies. This gemspec had none at all: the app's gems were
