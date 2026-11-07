@@ -157,14 +157,32 @@ module Nautilus
       location.set_display_name(new_name)
     end
 
-    # nautilus_file_operations_extract_files(): extract each archive into a
-    # sibling folder named after it (extract-here) or into `destination`
-    # when one is given (extract-to). GnomeAutoar::Extractor does the actual
-    # decompression; it supports every format libarchive does, which is why
-    # upstream uses it rather than shelling out to `tar`/`unzip`.
+    # nautilus_file_operations_extract_files(): extract each archive beside
+    # itself (extract-here) or into `destination` when one is given
+    # (extract-to). GnomeAutoar::Extractor does the actual decompression; it
+    # supports every format libarchive does, which is why upstream uses it
+    # rather than shelling out to `tar`/`unzip`.
+    #
+    # Both the C source and this port hand Extractor a *parent* directory,
+    # never the final extracted folder: with `output_is_dest` left at its
+    # default (false), the extractor itself invents the suggested
+    # destination name (from the archive's own basename, de-duplicated
+    # against what is already there) inside whatever directory it is given,
+    # exactly as extract_task_thread_func() does in
+    # src/nautilus-file-operations.c, which always passes its
+    # destination_directory straight to autoar_extractor_new() with no
+    # pre-computed subfolder of its own.
+    #
+    # An earlier version of this method pre-computed that subfolder itself
+    # (stripping the archive's extension) and then handed autoar that
+    # *already-final* folder as the parent directory too — autoar dutifully
+    # invented its own suggested name inside it, so "photos.tar.gz" landed
+    # at "photos/photos/…" instead of "photos/…". Confirmed with a real
+    # tar.gz and a signal_connect on "completed": the double nesting shows
+    # up on disk, not just in theory.
     def extract(locations, destination: nil, parent: nil, &on_done)
       locations.each do |location|
-        target = destination || extract_here_target(location)
+        target = destination || location.parent
         begin
           GnomeAutoar::Extractor.new(location, target).start(nil)
         rescue GLib::Error, RuntimeError => error
@@ -176,14 +194,6 @@ module Nautilus
         end
       end
       on_done&.call(destination)
-    end
-
-    # Extract-here's target is a folder beside the archive, named after it
-    # with its extension stripped — e.g. "photos.tar.gz" extracts into
-    # "photos" next to it, matching autoarchive's own suggested-name logic.
-    def extract_here_target(location)
-      name = location.basename.sub(/\.(tar\.(gz|bz2|xz)|tgz|zip|7z|rar|gz|bz2|xz)\z/i, '')
-      location.parent.get_child(name)
     end
 
     # view.compress is NOT wired to GnomeAutoar::Compressor: its `format`
