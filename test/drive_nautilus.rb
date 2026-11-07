@@ -607,6 +607,69 @@ GtkDriver.drive(app_object, shots: SHOTS) do |d, app|
   d.step('win.close-current-view closes the trash-test tab') do
     app.windows.first.actions.lookup_action('close-current-view').activate(nil)
   end
+
+  # FileOperations.copy's real conflict path: copying over an existing name
+  # pauses on a live Nautilus::FileConflictDialog rather than just erroring.
+  CONFLICT_DIR = Dir.mktmpdir('nautilus-drive-conflict')
+  CONFLICT_SOURCE = File.join(CONFLICT_DIR, 'source.txt')
+  CONFLICT_DEST_DIR = File.join(CONFLICT_DIR, 'dest')
+  CONFLICT_DEST_FILE = File.join(CONFLICT_DEST_DIR, 'source.txt')
+  FileUtils.mkdir_p(CONFLICT_DEST_DIR)
+  File.write(CONFLICT_SOURCE, 'new-contents')
+  File.write(CONFLICT_DEST_FILE, 'old-contents')
+
+  d.step('Nautilus::FileOperations.copy onto an existing name opens a conflict dialog') do
+    Nautilus::FileOperations.copy(
+      [Gio::File.new_for_path(CONFLICT_SOURCE)],
+      Gio::File.new_for_path(CONFLICT_DEST_DIR),
+    )
+  end
+
+  conflict_dialog = nil
+
+  d.step('the conflict dialog is a live FileConflictDialog, offering Replace') do
+    conflict_dialog = ObjectSpace.each_object(Nautilus::FileConflictDialog).first
+    d.check('a FileConflictDialog instance exists') { !conflict_dialog.nil? }
+    d.check('the destination content is still the old one, pending a response') do
+      File.read(CONFLICT_DEST_FILE) == 'old-contents'
+    end
+  end
+
+  d.step('choosing Replace runs the real overwrite through Gio::File#copy') do
+    conflict_dialog.send(:respond, Nautilus::FileConflictDialog::RESPONSE_REPLACE)
+  end
+
+  d.step('the destination now has the source file’s real content') do
+    d.check('source.txt was actually overwritten') { File.read(CONFLICT_DEST_FILE) == 'new-contents' }
+  end
+
+  # NetworkAddressBar's real Gio::Vfs query decides which schemes enable
+  # Connect; it also only shows up while browsing network:///. This dev
+  # shell has no gvfs network backend to actually enumerate network:///
+  # (Gio::IOError::NotSupported), so the slot's location is swapped
+  # directly rather than through a real failing navigation — Window#
+  # on_slot_changed is still the real production method under test.
+  d.step('the window reacts to a network:/// location by showing the address bar') do
+    window = app.windows.first
+    window.active_slot.instance_variable_set(:@location, Gio::File.new_for_uri('network:///'))
+    window.send(:on_slot_changed, window.active_slot)
+    d.check('network_address_bar.root is visible') { window.network_address_bar.root.get_property('visible') }
+  end
+
+  d.step('its Connect button reflects the real Gio::Vfs-supported schemes') do
+    bar = app.windows.first.network_address_bar
+    bar.address_entry.text = 'bogus-no-such-scheme://host'
+    d.check('an unsupported scheme leaves Connect disabled') { !bar.connect_button.get_property('sensitive') }
+    bar.address_entry.text = 'resource://x'
+    d.check('a real Gio::Vfs-supported scheme enables Connect') { bar.connect_button.get_property('sensitive') }
+  end
+
+  d.step('leaving network:/// hides the address bar again') do
+    window = app.windows.first
+    window.active_slot.instance_variable_set(:@location, Gio::File.new_for_path(SCRATCH))
+    window.send(:on_slot_changed, window.active_slot)
+    d.check('network_address_bar.root is hidden again') { !window.network_address_bar.root.get_property('visible') }
+  end
 end
 
 # Not removed before this point: closing the tab above does not synchronously
@@ -620,3 +683,4 @@ FileUtils.rm_rf(ENV.fetch('XDG_DATA_HOME'))
 FileUtils.rm_rf(FIXTURES)
 FileUtils.rm_rf(ARCHIVE_SOURCE)
 FileUtils.rm_rf(TRASH_SCRATCH)
+FileUtils.rm_rf(CONFLICT_DIR)

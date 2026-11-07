@@ -5,6 +5,8 @@ require 'ashpd'
 require 'gnome-autoar'
 require_relative 'dialog_utilities'
 require_relative 'ui_utilities'
+require_relative 'file_conflict_dialog'
+require_relative 'file'
 
 module Nautilus
   # FileOperations copies, moves, trashes, deletes and links files, and asks
@@ -21,18 +23,25 @@ module Nautilus
     module_function
 
     # nautilus_file_operations_copy_move(): copying into a folder, or moving
-    # into it when `move` is set.
+    # into it when `move` is set. Each location is transferred in turn; a
+    # name conflict pauses the sequence on FileConflictDialog (#transfer's
+    # continuation), rather than transferring the rest while that question
+    # is still on screen.
     def copy_move(locations, destination, move: false, parent: nil, &on_done)
-      locations.each do |location|
+      apply_to_all = { response: nil }
+      transfer_each(locations.dup, destination, move, parent, apply_to_all, on_done)
+    end
+
+    def transfer_each(remaining, destination, move, parent, apply_to_all, on_done)
+      if remaining.empty?
+        on_done&.call(destination)
+      else
+        location = remaining.shift
         target = destination.get_child(location.basename)
-        transfer(
-          location,
-          target,
-          move,
-          parent,
-        )
+        transfer(location, target, move, parent, apply_to_all) do
+          transfer_each(remaining, destination, move, parent, apply_to_all, on_done)
+        end
       end
-      on_done&.call(destination)
     end
 
     def copy(locations, destination, parent: nil, &on_done)
@@ -237,12 +246,27 @@ module Nautilus
 
     # --- The work -----------------------------------------------------------
 
-    def transfer(location, target, move, parent)
-      if move
-        location.move(target, :nofollow_symlinks)
+    # Transfers one top-level location, then calls `continue`. A name
+    # already taken at the destination (G_IO_ERROR_EXISTS) is not reported
+    # as a plain error: it pauses on FileConflictDialog so the user can
+    # replace, rename or skip, matching nautilus-operations-ui-manager.c's
+    # role for the single-file case. `apply_to_all` remembers a choice the
+    # user already made "for all" so later conflicts in the same transfer
+    # skip the dialog and repeat it.
+    def transfer(location, target, move, parent, apply_to_all, &continue)
+      if apply_to_all[:response] == DialogUtilities::SKIP_ALL
+        continue.call
       else
-        copy_recursively(location, target)
+        replace = apply_to_all[:response] == DialogUtilities::REPLACE
+        if move
+          location.move(target, replace ? :overwrite : :nofollow_symlinks)
+        else
+          copy_recursively(location, target, force_replace: replace)
+        end
+        continue.call
       end
+    rescue Gio::IOError::Exists
+      resolve_conflict(location, target, move, parent, apply_to_all, &continue)
     rescue GLib::Error => error
       report_transfer_error(
         target,
@@ -250,22 +274,84 @@ module Nautilus
         move,
         parent,
       )
+      continue.call
     end
 
-    # g_file_copy() does not recurse into folders, so a folder is recreated
-    # at the target and its children copied one by one.
-    def copy_recursively(location, target)
-      if location.query_file_type(:none, nil) == :directory
-        copy_directory(location, target)
-      else
-        location.copy(target, :none)
+    def resolve_conflict(location, target, move, parent, apply_to_all, &continue)
+      source_file = File.for_location(location)
+      dest_file = File.for_location(target)
+
+      FileConflictDialog.new(parent: parent).tap do |dialog|
+        dialog.build
+        dialog.set_text(
+          "A file named “#{target.basename}” already exists. Do you want to replace it?",
+          "The file already exists in “#{target.parent&.basename}”. Replacing it will overwrite its content.",
+        )
+        dialog.set_images(dest_file, source_file)
+        dialog.set_file_labels(dest_file.display_name, source_file.display_name)
+        dialog.suggested_name = unique_name_for(target)
+        dialog.conflict_name = target.basename
+
+        dialog.dialog.signal_connect('close-request') do
+          on_conflict_response(dialog.response, dialog, location, target, move, parent, apply_to_all, &continue)
+          false
+        end
+        dialog.present
       end
     end
 
-    def copy_directory(location, target)
+    def on_conflict_response(response, dialog, location, target, move, parent, apply_to_all, &continue)
+      case response
+      when FileConflictDialog::RESPONSE_REPLACE
+        if dialog.apply_to_all?
+          apply_to_all[:response] = DialogUtilities::REPLACE
+        end
+        transfer(location, target, move, parent, { response: DialogUtilities::REPLACE }, &continue)
+      when FileConflictDialog::RESPONSE_RENAME
+        new_target = target.parent.get_child(dialog.new_name)
+        transfer(location, new_target, move, parent, apply_to_all, &continue)
+      when FileConflictDialog::RESPONSE_SKIP
+        if dialog.apply_to_all?
+          apply_to_all[:response] = DialogUtilities::SKIP_ALL
+        end
+        continue.call
+      else
+        continue.call
+      end
+    end
+
+    # nautilus_file_operations_get_target_file(): the "(1)" suggestion a
+    # conflicting name gets offered as a rename.
+    def unique_name_for(target)
+      basename = target.basename
+      extension = basename.rindex('.').then { |dot| dot && dot.positive? ? basename[dot..] : '' }
+      stem = extension.empty? ? basename : basename[0...-extension.length]
+      count = 1
+      candidate = target
+      while candidate.query_exists(nil)
+        candidate = target.parent.get_child("#{stem} (#{count})#{extension}")
+        count += 1
+      end
+      candidate.basename
+    end
+
+    # g_file_copy() does not recurse into folders, so a folder is recreated
+    # at the target and its children copied one by one. `force_replace`
+    # is set once the conflict dialog's Replace response has resolved the
+    # top-level conflict; it is passed back through #transfer so the
+    # overwrite is actually performed.
+    def copy_recursively(location, target, force_replace: false)
+      if location.query_file_type(:none, nil) == :directory
+        copy_directory(location, target, force_replace: force_replace)
+      else
+        location.copy(target, force_replace ? :overwrite : :none)
+      end
+    end
+
+    def copy_directory(location, target, force_replace: false)
       make_directory_unless_present(target)
       children_of(location).each do |child|
-        copy_recursively(child, target.get_child(child.basename))
+        copy_recursively(child, target.get_child(child.basename), force_replace: force_replace)
       end
     end
 

@@ -4,6 +4,7 @@ require 'adwaita'
 require_relative 'window_slot'
 require_relative 'toolbar'
 require_relative 'sidebar'
+require_relative 'network_address_bar'
 require_relative 'history_controls'
 require_relative 'view_controls'
 require_relative 'ui_utilities'
@@ -128,6 +129,7 @@ module Nautilus
         content_toolbar_view.tap do |view|
           view.add_top_bar(toolbar.build)
           view.add_top_bar(tab_bar)
+          view.add_top_bar(network_address_bar.build)
           view.content = tab_view
           view.add_bottom_bar(action_bar)
         end
@@ -219,6 +221,15 @@ module Nautilus
     def toolbar
       @toolbar ||= Toolbar.new(
         on_sidebar_toggled: ->(active) { split_view.show_sidebar = active },
+      )
+    end
+
+    # Shown only while browsing network:///, below the toolbar, as
+    # nautilus-window.c's `gtk_widget_set_visible (window->network_address_bar,
+    # g_file_has_uri_scheme (location, SCHEME_NETWORK_VIEW))` does.
+    def network_address_bar
+      @network_address_bar ||= NetworkAddressBar.new(
+        on_open_location: ->(uri) { active_slot&.open_location(Gio::File.new_for_uri(uri)) },
       )
     end
 
@@ -352,6 +363,7 @@ module Nautilus
         action_bar_history_controls.window_slot = slot
         action_bar_view_controls.window_slot = slot
         sidebar.window_slot = slot
+        network_address_bar.root.visible = slot.location.uri_scheme == 'network'
       end
 
       # The nine setters the blueprint's breakpoint carries.
