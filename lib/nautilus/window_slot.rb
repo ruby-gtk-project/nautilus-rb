@@ -101,7 +101,7 @@ module Nautilus
     def open_location(target)
       unless target.nil? || target.uri == @location.uri
         @back_history.unshift(directory)
-        @forward_history.clear
+        clear_forward_history
         go_to(target)
       end
     end
@@ -142,6 +142,21 @@ module Nautilus
     def can_go_back? = !@back_history.empty?
     def can_go_forward? = !@forward_history.empty?
 
+    # Called when the tab holding this slot closes. @directory and every
+    # entry in @back_history/@forward_history each armed a Gio::FileMonitor
+    # (FilesView#reload calls Directory#monitor on every location shown).
+    # Dropping the slot without cancelling those leaves the monitors watching
+    # after nothing in Ruby references their Directory any more; a 'changed'
+    # event that arrives once GC has collected it segfaults into freed
+    # memory instead of raising. Cancelling everything here, the way
+    # clear_forward_history already does for the forward list, is what
+    # nautilus_window_slot_destroy() does by dropping its directory refs.
+    def close
+      @directory&.cancel_monitor
+      @back_history.each(&:cancel_monitor)
+      @forward_history.each(&:cancel_monitor)
+    end
+
     private
 
       def go_to(target)
@@ -159,6 +174,20 @@ module Nautilus
         refresh_content_bar
         @on_title_changed&.call(self)
         refresh_action_availability
+      end
+
+      # A forward-history entry that gets dropped here still has a live
+      # Gio::FileMonitor armed from the reload that showed it (FilesView#reload
+      # calls Directory#monitor). Clearing the array without cancelling that
+      # monitor first leaves the underlying GFileMonitor watching after
+      # nothing in Ruby references the Directory any more; once GC collects
+      # it, a 'changed' event arriving for the now-finalized object is a
+      # segfault, not a Ruby exception. Cancelling before the drop keeps the
+      # monitor's lifetime tied to the history entry's, the way
+      # nautilus_window_slot disconnects a directory it is no longer tracking.
+      def clear_forward_history
+        @forward_history.each(&:cancel_monitor)
+        @forward_history.clear
       end
 
       # nautilus_window_slot_setup_extra_location_widgets()'s x-content-bar

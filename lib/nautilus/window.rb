@@ -334,6 +334,7 @@ module Nautilus
         @slots[page].then do |slot|
           unless slot.nil?
             @closed_locations.push(slot.location)
+            slot.close
             @slots.delete(page)
           end
         end
