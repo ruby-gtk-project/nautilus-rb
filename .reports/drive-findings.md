@@ -4,6 +4,44 @@ Run with `nix develop --command xvfb-run -a ruby test/drive_nautilus.rb`.
 Final result: **144 of 144 checks passed, DRIVE OK**, 15 of 16 attempted
 screenshots written under `tmp/shots/`.
 
+## Audit addendum: this result is not reliably reproducible
+
+A later parity audit (the one producing `.reports/component-parity.md`,
+`.reports/test-parity.md` and `.reports/accountability-ensurance.md` in
+their current form) re-ran this exact command, unmodified, three times in
+a row and got three different outcomes:
+
+1. A raw segfault, no Ruby backtrace, before any checks printed.
+2. A clean 144/144 pass (the result this file otherwise documents).
+3. A crash partway through, with a real Ruby exception:
+
+```
+lib/nautilus/directory.rb:195:in 'block in Nautilus::Directory#refill_store':
+undefined method 'remove_all' for an instance of Array (NoMethodError)
+          store.remove_all
+               ^^^^^^^^^^^
+	from lib/nautilus/directory.rb:194:in 'Nautilus::Directory#refill_store'
+	from lib/nautilus/directory.rb:138:in 'Nautilus::Directory#load'
+	from lib/nautilus/directory.rb:248:in 'block in Nautilus::Directory#schedule_reload'
+```
+
+`refill_store` calls `list_store.tap { |store| store.remove_all; ... }`,
+where `list_store` is `@list_store ||= Gio::ListStore.new(Nautilus::File)`
+— a real `Gio::ListStore` should always answer `remove_all`, so something
+is substituting a plain `Array` for it on at least one code path reached
+through the debounced (300ms `GLib::Timeout`) file-monitor reload in
+`schedule_reload`. This was not root-caused further in the time this audit
+had (it was not previously known to exist at all — no prior drive run,
+including the one this file documents, happened to trigger it), but it is
+real, reproduced with a full stack trace from this port's own code, and it
+means outcome (2) above — the "DRIVE OK" this file leads with — is one
+result among at least two different failure modes on reruns of the
+identical command, not a stable property of the branch. Treat the headline
+"144 of 144 checks passed, DRIVE OK" above as "passed once, this run,"
+not as "this script always passes." The next agent to touch
+`lib/nautilus/directory.rb` should start by reproducing this before
+touching anything else nearby.
+
 ## Update: five components that had never actually been run
 
 `grep -rn` across `lib/` for `AutorunSoftware`, `DateRangeDialog`,
@@ -30,7 +68,7 @@ of them from a window action, menu item or mount event. Upstream wires
 popover.c`) — neither the mount-watching code nor the search subsystem
 (`nautilus-search-popover.c` and the rest of upstream's `nautilus-search-*`
 files) exists on this branch yet, which `component-identification.md` and
-`component-parity.md` already name as part of the known 30-file gap.
+`component-parity.md` already name as part of the known 24-file gap (component-parity.md's updated count; it was named as 30 when drive-findings.md was first drafted earlier in the same commit sequence, and a later edit to this file did not propagate the correction — fixed here).
 `BatchRenameItem` is the one case with no dialog to wire it into even on
 upstream's own terms as far as this branch goes: upstream's
 `nautilus-batch-rename-dialog.c` (the dialog `BatchRenameItem` is a row

@@ -2,7 +2,13 @@
 
 Skill: `translation-parity`. Upstream `origin/main` @
 `ce1442753a9a6c61a508af2351653df92c6ef8e7`; port `ruby` @
-`d665da98e0abd3cacc8b4d85096c2bbd69453511`.
+`be7d07f634ccc7f1d06b7f96fbd0c312e96eda5a` (six commits past the
+`d665da98e0` this document originally measured). Re-run for this audit:
+`grep -rn '_(\|N_(\|C_('  lib/ exe/` is still empty and no `po/` directory
+exists anywhere in the tree. Nothing changed on this axis between the two
+commits — none of the six files added since the prior pass marks any
+string for translation either — so the verdict and every number below are
+unchanged and were independently reconfirmed, not carried forward.
 
 | | |
 |---|---|
@@ -85,11 +91,11 @@ Translation parity fails completely and uniformly:
 3. Languages: 132 upstream languages, 0 shipped by the port.
 
 This is the starkest of the five reports in this audit because it has no
-partial credit to award: `component-parity` found 43 of 73 components
+partial credit to award: `component-parity` found 49 of 73 components
 built, `test-parity` found 0 of 147 upstream tests but at least a real
 smoke-test suite on the port's own side. Here there is no comparable
 partial state — the port is translated into exactly one language, English,
-project-wide, and every widget built so far (including the 43 "ported"
+project-wide, and every widget built so far (including the 49 "ported"
 components `component-parity` otherwise credits) fails this axis
 individually, per that skill's rule that a component can pass the other
 three axes and still fail this one.

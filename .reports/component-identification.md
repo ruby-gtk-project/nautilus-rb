@@ -3,7 +3,46 @@
 Skill: `component-identification`. Upstream read from `origin/main` (GNOME
 Files / nautilus, C + blueprint, commit `ce1442753a9a6c61a508af2351653df92c6ef8e7`
 as currently fetched); port read from `ruby` (this branch,
-commit `d665da98e0abd3cacc8b4d85096c2bbd69453511` at audit time).
+commit `be7d07f634ccc7f1d06b7f96fbd0c312e96eda5a` at this audit's time — six
+commits past the `d665da98e0` this document originally audited).
+
+## Update at `be7d07f63`: six more files exist, the backlog narrows, it does not close
+
+The commits after the original pass (`9a60361b8`, `3bad8ae56`, `d569be85c`,
+`eee248d47`, `be7d07f63`) added real port files for six of the items this
+document previously listed as missing: `date_range_dialog.rb`,
+`date_entry_row.rb`, `network_address_bar.rb`, `autorun_software.rb`,
+`x_content_bar.rb`, `file_conflict_dialog.rb`. Re-run directly against the
+live tree:
+
+```
+$ find lib/nautilus -maxdepth 1 -name '*.rb' | wc -l
+54
+```
+
+(54 includes `rb/` is a subdir not matched by `-maxdepth 1`; the flat count
+of top-level `lib/nautilus/*.rb` files is 54.) That raises the
+"matched to an upstream file" count from 43 to **49** and lowers "missing
+entirely" from 30 to **24** — see `.reports/component-parity.md`'s updated
+table for the row-by-row accounting. The three biggest unported systems
+named below (properties, search, progress) are **unchanged**: none of the
+six newly-ported files touches any of them. `be7d07f63` itself did not add
+new widgets at all — its commit message says so directly ("the remaining
+gap is integration, not correctness") — it wired three previously-orphaned
+files into the drive script and fixed one real bug the exercise found
+(`Adwaita::AlertDialog#format_heading` not bound; see
+`.reports/drive-findings.md`). None of those five files (`AutorunSoftware`,
+`DateRangeDialog`, `DateEntryRow`, `BatchRenameItem`, `XContentBar`) is
+reachable from any window action, menu item, or real mount event on this
+branch today — they exist and pass their own drive checks in isolation, but
+a user clicking around the running app cannot reach any of them. That is
+recorded here as an identification-level fact (the widget exists, in a
+file, with no caller), not re-litigated as a parity finding — see
+component-parity and accountability-ensurance for the "built but unwired"
+distinction.
+
+This update was produced by re-reading the live tree for this audit, not by
+trusting the prior document's numbers forward.
 
 This report does not re-derive the inventory from scratch: `.reports/component-inventory.md`
 already on this branch is a `component-identification`-skill survey of the
@@ -69,9 +108,15 @@ row understates them:
   and other ported files reference `view.properties` as an action name, but
   no file in `lib/` implements it — see component-parity.
 - **The search stack** (`nautilus-query-editor.c`, `nautilus-search-popover.blp/.c`,
-  `nautilus-search-types-dialog.blp`, `nautilus-date-range-dialog.blp/.c`,
-  `nautilus-date-entry-row.blp/.c`, plus the five backend files
-  `nautilus-search-engine*.c`) is entirely absent. `toolbar.rb` and
+  `nautilus-search-types-dialog.blp`, plus the five backend files
+  `nautilus-search-engine*.c`) is still absent as of `be7d07f63`. Two of its
+  pieces — `nautilus-date-range-dialog.blp/.c` and
+  `nautilus-date-entry-row.blp/.c` — now have a port file
+  (`date_range_dialog.rb`, `date_entry_row.rb`), but neither is reachable:
+  the search popover that would open either one does not exist, and
+  nothing else in `lib/` calls them (confirmed by `grep -rn
+  'DateRangeDialog\|DateEntryRow' lib/`, which turns up only each class's
+  own file and its one sibling reference). `toolbar.rb` and
   `window.rb` both wire real buttons to the actions `slot.search-visible`
   and `slot.search-global` (`lib/nautilus/toolbar.rb:212`,
   `lib/nautilus/window.rb:197`), but no file in `lib/` installs either
@@ -88,6 +133,7 @@ row understates them:
   counterpart widget built in `lib/nautilus/window.rb` at all — confirmed by
   reading the file; there is no bottom-bar operations button in the port.
 
-These three alone account for roughly a third of the 30 missing files and
-are large, user-visible, everyday-use surfaces (copying a large file,
-right-click → Properties, searching a folder) — not edge cases.
+These three alone account for roughly a quarter of the 24 missing files
+(see the Update section above for the current count) and are large,
+user-visible, everyday-use surfaces (copying a large file, right-click →
+Properties, searching a folder) — not edge cases.

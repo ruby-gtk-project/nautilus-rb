@@ -2,14 +2,18 @@
 
 Skill: `test-parity`. Upstream `origin/main` @
 `ce1442753a9a6c61a508af2351653df92c6ef8e7`; port `ruby` @
-`d665da98e0abd3cacc8b4d85096c2bbd69453511`.
+`be7d07f634ccc7f1d06b7f96fbd0c312e96eda5a` — re-run for this audit (six
+commits past the `d665da98e0` this document originally measured). Every
+number and command below was independently re-executed at `be7d07f63`, not
+carried forward from the prior pass.
 
 | | |
 |---|---|
 | Upstream tests | **147** |
 | Ported | **0** |
 | Gaps | **147** |
-| Test command | `rake spec` / the dev shell's "run the specs" line — **does not run** (see below) |
+| Test command | `rake spec` / the dev shell's "run the specs" line — **does not run** (re-confirmed below) |
+| `test/drive_nautilus.rb` size at this audit | 144 checks (was 86 at the prior pass), across 39 components per the runtime gate |
 
 ## Step 1 — census of the upstream suite
 
@@ -78,12 +82,30 @@ spec/spec_helper.rb
 spec/README.md
 ```
 
-`test/drive_nautilus.rb` is 86 `d.check`/`d.step` assertions (confirmed by
-reading it start to end for component-parity). It is a UI smoke/integration
-script written for the port, named after what it clicks through
-("the new-folder dialog renders"), not after any upstream test — **zero**
-of its 86 checks maps to any of the 147 upstream registrations above by
-name or by asserted property. It belongs entirely under `## Extra`.
+`test/drive_nautilus.rb` is now 208 `d.check`/`d.step` lines (144 of which
+are checks the runner counts and reports; it was 86 checks at the prior
+pass, before `be7d07f63` added standalone exercises of `DateRangeDialog`,
+`DateEntryRow`, `BatchRenameItem` and `AutorunSoftware`). It is a UI
+smoke/integration script written for the port, named after what it clicks
+through ("the new-folder dialog renders"), not after any upstream test —
+**zero** of its 144 checks maps to any of the 147 upstream registrations
+above by name or by asserted property, now or before. It belongs entirely
+under `## Extra`.
+
+**Re-running the gate for this audit found it is not reliably 144/144.**
+Three independent runs of `nix develop --command xvfb-run -a ruby
+test/drive_nautilus.rb` (unmodified) produced: one clean 144/144 pass, one
+crash mid-run with `NoMethodError: undefined method 'remove_all' for an
+instance of Array` from `lib/nautilus/directory.rb`'s debounced
+file-monitor reload path, and (on an earlier attempt) one raw segfault with
+no Ruby backtrace, not reproduced again. Full detail, including the stack
+trace and the timing explanation for why this is intermittent, is in
+`.reports/component-parity.md`'s behaviour-axis section and
+`.reports/drive-findings.md`. This matters specifically for this report's
+mandate: **a drive run reporting "144 passed, 0 failed" is not itself
+proof the suite is stable** — rerun it and it does not always say that,
+which is the empty-suite problem's sibling (counting a flaky pass as a
+real one) rather than the empty-suite problem itself.
 
 `spec/` contains `spec_helper.rb` and a `README.md` describing the
 `kettle-test` harness's helper APIs. **No example file (`spec/**/*_spec.rb`)
@@ -116,15 +138,17 @@ plus a bare `rspec` gem; it never bundles the repo-root `Gemfile`'s dev
 dependencies (`kettle-family`/`kettle-test`), so `kettle/test/rspec` is not
 on the load path the dev shell provides. Even granting that this is an
 environment/packaging problem rather than a Ruby-code problem, **the
-runtime gate's "86 checks passed, 0 failed" says nothing about this
+runtime gate's "144 checks passed, 0 failed" says nothing about this
 suite**, because this suite is not what ran: it errors before collecting a
-single example, "0 examples" either way.
+single example, "0 examples" either way. (And, per the Step 2 update above,
+the 144/144 figure itself is not even reliably reproducible on reruns of
+that same script.)
 
 ## Verdict
 
 - **Counts are not equal**: 147 vs. 0.
 - **The mapping is not a bijection**: it is the empty relation. Every one of
-  147 upstream tests is a gap; the port's 86 UI checks are unrelated extra
+  147 upstream tests is a gap; the port's 144 UI checks are unrelated extra
   work, not substitutes.
 - **The port's "own" suite does not run.** This is worse than a suite that
   runs and is merely thin: "0 examples" from a suite that loads is at least
@@ -140,23 +164,31 @@ single example, "0 examples" either way.
 
 ## Extra
 
-- `test/drive_nautilus.rb` — 86 checks driving the window shell, sidebar,
+- `test/drive_nautilus.rb` — 144 checks driving the window shell, sidebar,
   grid/list toggle, new-folder/select-items/column-chooser/grid-captions
   dialogs, tabs, history, the narrow-layout breakpoint, preferences,
-  shortcuts, about, accelerators and select-all/invert. Written for the
-  port; zero of upstream's 147 registered tests. See
-  `.reports/component-parity.md` for exactly which of the port's 43 ported
-  files this does and does not exercise.
+  shortcuts, about, accelerators, select-all/invert, and (as of `be7d07f63`)
+  standalone exercises of `DateRangeDialog`, `DateEntryRow`,
+  `BatchRenameItem` and `AutorunSoftware`. Written for the port; zero of
+  upstream's 147 registered tests. See `.reports/component-parity.md` for
+  exactly which of the port's 49 ported files this does and does not
+  exercise (and which of the "driven" ones are reachable from the running
+  app at all).
 - `test/gtk_driver.rb` — the harness `drive_nautilus.rb` runs on; not a test
   file itself.
 
 ## Relation to the runtime gate
 
-The task's runtime gate ("drive_ok=true, 86 checks passed, 0 failed,
-16 components") is `test/drive_nautilus.rb`'s own result, re-described.
-It is accurate as a statement about that one script. It is not a test-suite
-result in the sense this ledger tracks, and treating 86/86 as evidence
-toward the 147-test upstream suite would itself be the "false green"
-failure mode this audit was asked to watch for: a passing, narrow drive run
-standing in for a suite that was never ported and, as shown above, cannot
-currently even be made to run.
+This round's runtime gate ("drive_ok=true, 144 checks passed, 0 failed,
+39 components") is `test/drive_nautilus.rb`'s own result, re-described.
+It is accurate as a statement about *one run* of that one script — this
+audit confirmed one clean run directly. It is not a test-suite result in
+the sense this ledger tracks, and treating 144/144 as evidence toward the
+147-test upstream suite would itself be the "false green" failure mode
+this audit was asked to watch for: a passing, narrow drive run standing in
+for a suite that was never ported and, as shown above, cannot currently
+even be made to run. Worse, this audit's own reruns found the 144/144
+result is not even reliably reproducible on the *same* script (see Step 2
+above) — a second false-green risk layered on the first: not only does a
+narrow pass stand in for a missing suite, the narrow pass itself sometimes
+isn't one.
