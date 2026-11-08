@@ -1,10 +1,65 @@
 # Drive run findings (test/drive_nautilus.rb)
 
 Run with `nix develop --command xvfb-run -a ruby test/drive_nautilus.rb`.
-Final result: **86 of 86 checks passed, DRIVE OK**, 12 of 13 attempted
+Final result: **144 of 144 checks passed, DRIVE OK**, 15 of 16 attempted
 screenshots written under `tmp/shots/`.
 
-## Bug found and fixed
+## Update: five components that had never actually been run
+
+`grep -rn` across `lib/` for `AutorunSoftware`, `DateRangeDialog`,
+`DateEntryRow`, `BatchRenameItem` and `XContentBar` turned up only each
+class's own file — none of the first four is `require_relative`d by
+anything `require 'nautilus'` pulls in (`DateEntryRow` is pulled in only as
+`date_range_dialog.rb`'s own dependency), and `XContentBar`'s one real call
+site, `window_slot.rb`'s mount-changed handler, can never fire in this
+headless Xvfb session because nothing here produces a real `Gio::Mount`.
+Every prior drive run, including the one this file previously reported
+"86 of 86" for, exercised none of these five classes at all, despite each
+one carrying a porting comment naming its upstream `.c` file.
+
+The drive script now `require_relative`s the three orphaned files directly
+and drives all five classes with a stand-in `Gio::Mount` (`FakeMount`, a
+plain object answering `#name`/`#root`/`#signal_connect`, since this Xvfb
+session has no removable media and no GVfs volume-monitor backend to hand
+either `AutorunSoftware` or `XContentBar` a real one). Doing so found a real
+bug, below. The remaining gap is integration, not correctness: these four
+classes work on their own, but nothing in the running application calls any
+of them from a window action, menu item or mount event. Upstream wires
+`AutorunSoftware` from `g-volume-monitor`'s mount-added signal and
+`DateRangeDialog` from the search-filters popover (`src/nautilus-search-
+popover.c`) — neither the mount-watching code nor the search subsystem
+(`nautilus-search-popover.c` and the rest of upstream's `nautilus-search-*`
+files) exists on this branch yet, which `component-identification.md` and
+`component-parity.md` already name as part of the known 30-file gap.
+`BatchRenameItem` is the one case with no dialog to wire it into even on
+upstream's own terms as far as this branch goes: upstream's
+`nautilus-batch-rename-dialog.c` (the dialog `BatchRenameItem` is a row
+model for) has no port at all — only the row class exists.
+
+### Bug found and fixed: `AutorunSoftware#dialog`
+
+`alert.format_heading("..." % mount_name)` raised
+`NoMethodError: undefined method 'format_heading' for an instance of
+Adwaita::AlertDialog`. Confirmed by hand: this adwaita gem build binds the
+plain `heading`/`heading=` property pair but not
+`adw_alert_dialog_format_heading()`'s printf-style wrapper. Fixed by
+interpolating the string in Ruby (which the call already did, via `%`) and
+assigning it with `alert.heading = ...` instead — same text, no behaviour
+change, just the setter the binding actually has. This had never been
+caught before because nothing had ever called `AutorunSoftware#present`
+until this drive run did.
+
+### Binding quirk found while testing, not a bug: `Adwaita::Dialog#visible?`
+
+`Adwaita::Dialog#visible?` keeps reporting `true` after `#close` — confirmed
+by hand with a standalone script. It reflects the underlying `GtkWidget`'s
+`visible` property, not whether the dialog host has actually removed it.
+The `"closed"` signal is what fires when the close really completes (also
+confirmed by hand), and is what the new `DateRangeDialog` checks and
+`AutorunSoftware` itself (which already connected to it) use instead of
+polling `#visible?`.
+
+## Bug found and fixed (prior round)
 
 `FilesView#mode=` calls `ListView#build` / `GridView#build` every time the
 view is switched back to, not only the first time it is shown. Both views'

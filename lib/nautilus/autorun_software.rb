@@ -30,7 +30,11 @@ module Nautilus
 
       def dialog
         @dialog ||= Adwaita::AlertDialog.new(nil, "If you don’t trust this location or aren’t sure, press Cancel.").tap do |alert|
-          alert.format_heading("“%s” contains software intended to be automatically started. Would you like to run it?" % mount_name)
+          # adw_alert_dialog_format_heading() (a printf-style formatter) has
+          # no binding in this adwaita gem build — only the plain `heading`
+          # property setter does — so the mount name is interpolated here in
+          # Ruby first, same as the C call's own %s substitution would do.
+          alert.heading = "“%s” contains software intended to be automatically started. Would you like to run it?" % mount_name
           alert.add_response('cancel', '_Cancel')
           alert.add_response('run', '_Run')
           alert.default_response = 'cancel'

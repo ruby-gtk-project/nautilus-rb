@@ -48,6 +48,18 @@ $LOAD_PATH.unshift(File.expand_path('../lib', __dir__))
 require 'nautilus'
 require_relative 'gtk_driver'
 
+# None of these four are `require_relative`d by anything `require 'nautilus'`
+# pulls in (confirmed with `grep -rn` across lib/ — each name's only hit is
+# its own file's definition and, for DateEntryRow, date_range_dialog.rb's
+# require of it). They exist on disk, with porting comments naming their
+# upstream C file, but nothing in the running application ever loads or
+# calls them. The steps below load them directly to drive the classes
+# themselves; see the "Orphaned components" step block for what that does
+# and does not prove.
+require_relative '../lib/nautilus/autorun_software'
+require_relative '../lib/nautilus/date_range_dialog'
+require_relative '../lib/nautilus/batch_rename_item'
+
 SHOTS = File.expand_path('../tmp/shots', __dir__)
 FileUtils.rm_rf(SHOTS)
 
@@ -111,12 +123,40 @@ AUDIO_FIXTURE_BUILT = system(
   %i[out err] => File::NULL,
 )
 
+# A minimal stand-in for a Gio::Mount. AutorunSoftware and XContentBar only
+# ever call #name, #root and #signal_connect on the mount they are given,
+# and this dev shell's Xvfb session has no removable media and no GVfs
+# volume-monitor backend to hand either class a real one — so nothing
+# anywhere in this script could otherwise reach either class at all. A
+# plain object answering exactly those three messages drives the real
+# production code in both classes without needing one.
+class FakeMount
+  attr_reader :name, :root
+
+  def initialize(name, root_path)
+    @name = name
+    @root = Gio::File.new_for_path(root_path)
+  end
+
+  def signal_connect(*) = nil
+end
+
+# A real executable `.autorun` script AutorunSoftware's own lookup order
+# (`.autorun` before `autorun` before `autorun.sh`) should find and spawn,
+# plus the marker file it writes, which is how the drive confirms the
+# process it spawned actually ran rather than merely not-raised.
+AUTORUN_DIR = Dir.mktmpdir('nautilus-drive-autorun')
+AUTORUN_MARKER = File.join(AUTORUN_DIR, 'ran')
+File.write(File.join(AUTORUN_DIR, '.autorun'), "#!/bin/sh\ntouch #{AUTORUN_MARKER}\n")
+File.chmod(0o755, File.join(AUTORUN_DIR, '.autorun'))
+
 app_object = Nautilus::Application.new
 
 # Carried from the step that opens a dialog to the step that interacts with
 # and closes it, so the dialog gets a tick to be realised before anything
 # tries to click inside it.
 pending_dialog = nil
+autorun_software = nil
 
 GtkDriver.drive(app_object, shots: SHOTS) do |d, app|
   d.window { app.windows.first&.window }
@@ -670,6 +710,176 @@ GtkDriver.drive(app_object, shots: SHOTS) do |d, app|
     window.send(:on_slot_changed, window.active_slot)
     d.check('network_address_bar.root is hidden again') { !window.network_address_bar.root.get_property('visible') }
   end
+
+  # --- Orphaned components: ported, but called from nowhere --------------
+  #
+  # Nothing above ever reached XContentBar, AutorunSoftware, DateEntryRow,
+  # DateRangeDialog or BatchRenameItem through a window action or menu item,
+  # because nothing in the rest of the port calls any of them either outside
+  # of this file: `grep -rn` for each class name across lib/ turns up only
+  # its own definition (XContentBar is the one partial exception — it is
+  # `require_relative`d and instantiated by window_slot.rb's mount-changed
+  # handler, but nothing in this script's headless Xvfb run ever produces a
+  # real `Gio::Mount` for that handler to fire on, so even that call site has
+  # never actually executed). AutorunSoftware, DateRangeDialog (and the
+  # DateEntryRow it composes) and BatchRenameItem are not required by
+  # anything `require 'nautilus'` pulls in at all - they do not load unless a
+  # script `require_relative`s them directly, as this one now does by
+  # constructing them. Each step below drives the class's own real code
+  # (its signal handlers, not a reimplementation of them) with a stand-in
+  # for the GObject upstream would hand it; see the end-of-run report for
+  # why none of this is reachable from inside the running application.
+  d.step("XContentBar matches upstream's message wording and content-type gate") do
+    # #message is built from @x_content_types, which #initialize has already
+    # filtered down to the types with a registered handler app — and this
+    # dev shell's sandbox has no app registered for any x-content/* type, so
+    # going through .new here would silently test the empty-list branch
+    # instead of the wording this check exists to pin. The ivar is set
+    # directly, bypassing the filter, to drive #message itself; the filter's
+    # own behaviour (should_handle_content_type?) is asserted separately
+    # below, on its own terms, with no app registration needed either way.
+    one = Nautilus::XContentBar.new(FakeMount.new('Disc', SCRATCH), [])
+    one.instance_variable_set(:@x_content_types, ['x-content/audio-player'])
+    d.check("a single audio-player type gets upstream's exact phrase") do
+      one.send(:message) == 'Contains music'
+    end
+    two = Nautilus::XContentBar.new(FakeMount.new('Disc', SCRATCH), [])
+    two.instance_variable_set(:@x_content_types, ['x-content/image-dcf', 'x-content/audio-player'])
+    d.check("photos plus music combine into upstream's two-type phrase") do
+      two.send(:message) == 'Contains photos and music'
+    end
+    d.check('a blank disc is never offered (should_handle_content_type?)') do
+      !Nautilus::XContentBar.should_handle_content_type?('x-content/blank-cd')
+    end
+    d.check('neither is win32-software') do
+      !Nautilus::XContentBar.should_handle_content_type?('x-content/win32-software')
+    end
+  end
+
+  d.step('XContentBar builds a real question-style GtkInfoBar') do
+    bar = Nautilus::XContentBar.new(FakeMount.new('Disc', SCRATCH), ['x-content/unix-software']).build
+    d.check('the widget is a Gtk::InfoBar') { bar.is_a?(Gtk::InfoBar) }
+    d.check('it is a question-style bar, as upstream makes it') { bar.message_type == :question }
+  end
+
+  d.step('DateEntryRow parses typed text and flags unparseable input, as upstream does') do
+    row = Nautilus::DateEntryRow.new
+    widget = row.build
+    widget.text = 'not a date'
+    d.check('an unparseable date gets the warning style class') { widget.has_css_class?('warning') }
+    d.check('and clears the stored date-time without touching the text') do
+      row.date_time.nil? && widget.text == 'not a date'
+    end
+    widget.text = Time.new(2024, 3, 15).strftime('%x')
+    d.check('a parseable date clears the warning class again') { !widget.has_css_class?('warning') }
+    d.check('and sets the stored date-time to the parsed day') do
+      !row.date_time.nil? &&
+        [row.date_time.year, row.date_time.month, row.date_time.day] == [2024, 3, 15]
+    end
+  end
+
+  date_range_result = nil
+  date_range_dialog = nil
+  date_range_closed = false
+
+  d.step('DateRangeDialog opens on Single Day, upstream\'s default range mode') do
+    date_range_dialog = Nautilus::DateRangeDialog.new(on_date_range: ->(range) { date_range_result = range })
+    dialog = date_range_dialog.build
+    # Adw.Dialog#visible? keeps reporting true after #close (confirmed by
+    # hand: it reflects the GtkWidget property, not whether the dialog host
+    # removed it) - the "closed" signal is what actually fires, which is
+    # also why AutorunSoftware's own dialog method below connects to it
+    # rather than polling #visible?.
+    dialog.signal_connect('closed') { date_range_closed = true }
+    dialog.present(app.windows.first.window)
+  end
+
+  d.step('it renders on Single Day, with Filter already sensitive') do
+    d.check('the title names what it does') { date_range_dialog.send(:dialog).title == 'Add Date Filter' }
+    d.check('Single Day is selected to start with') { date_range_dialog.send(:date_range_row).selected.zero? }
+    d.check('the single-date row is showing') { date_range_dialog.send(:single_date_row).widget.visible? }
+    d.check('the from/to rows are hidden') { !date_range_dialog.send(:from_entry_row).widget.visible? }
+    d.check('Filter starts sensitive (today is a valid single day)') do
+      date_range_dialog.send(:select_button).sensitive?
+    end
+    d.shot('15-date-range-dialog')
+  end
+
+  d.step('switching to Specify Range and picking an invalid then a valid pair') do
+    date_range_dialog.send(:date_range_row).selected = Nautilus::DateRangeDialog::SPECIFY_RANGE_POSITION
+    d.check('switching to Specify Range hides the single-date row') do
+      !date_range_dialog.send(:single_date_row).widget.visible?
+    end
+    d.check('and reveals the from/to rows') { date_range_dialog.send(:from_entry_row).widget.visible? }
+
+    date_range_dialog.send(:from_entry_row).date_time = Time.new(2024, 6, 10)
+    date_range_dialog.send(:to_entry_row).date_time = Time.new(2024, 6, 1)
+    d.check('Filter goes insensitive when from is after to') { !date_range_dialog.send(:select_button).sensitive? }
+
+    date_range_dialog.send(:to_entry_row).date_time = Time.new(2024, 6, 20)
+    d.check('and comes back once from is before to') { date_range_dialog.send(:select_button).sensitive? }
+
+    date_range_dialog.send(:select_button).signal_emit('clicked')
+    d.check('confirming hands back the real from/to pair') do
+      !date_range_result.nil? &&
+        date_range_result.map { |t| [t.year, t.month, t.day] } == [[2024, 6, 10], [2024, 6, 20]]
+    end
+  end
+
+  # Adw.Dialog#close runs on the frame clock rather than finishing
+  # synchronously with the call that triggers it (see the companion skill's
+  # "dialogs stack" trap and the equivalent wait elsewhere in this file for
+  # FileConflictDialog) - a tick has to pass before the "closed" signal
+  # fires.
+  d.step('the confirm actually closed the dialog') do
+    d.check('the "closed" signal fired') { date_range_closed }
+  end
+
+  d.step('BatchRenameItem flags a conflict and notifies on every change, as the preview list relies on') do
+    changes = []
+    item = Nautilus::BatchRenameItem.new('before.txt', 'after.txt', on_changed: ->(i) { changes << i })
+    d.check('it starts with no conflict') { !item.has_conflict? }
+    item.name_after = 'renamed.txt'
+    d.check('changing the proposed name notifies once') { changes.length == 1 && changes.first.equal?(item) }
+    item.has_conflict = true
+    d.check('flagging a conflict notifies again') { changes.length == 2 }
+    d.check('and it now reports one') { item.has_conflict? }
+    item.has_conflict = true
+    d.check('setting the same value again does not renotify (upstream\'s notify-on-change, not notify-always)') do
+      changes.length == 2
+    end
+  end
+
+  d.step('AutorunSoftware presents a real trust prompt, naming the mount') do
+    autorun_software = Nautilus::AutorunSoftware.new(FakeMount.new('Test Disc', AUTORUN_DIR))
+    autorun_software.present(app.windows.first.window)
+  end
+
+  d.step('the trust prompt renders, naming the mount') do
+    d.check('a trust prompt is showing') { !autorun_software.send(:dialog).destroyed? }
+    d.check('its heading names the mount, as autorun_software_dialog_mount_unmounted\'s caller builds it') do
+      autorun_software.send(:dialog).heading.include?('Test Disc')
+    end
+    d.shot('16-autorun-prompt')
+  end
+
+  d.step('declining it runs nothing') do
+    autorun_software.send(:dialog).signal_emit('response', 'cancel')
+  end
+
+  d.step('the decline really ran nothing') do
+    d.check('the .autorun script was not spawned') { !File.exist?(AUTORUN_MARKER) }
+  end
+
+  d.step('accepting it runs the real .autorun script through Gio::SubprocessLauncher') do
+    autorun_software = Nautilus::AutorunSoftware.new(FakeMount.new('Test Disc', AUTORUN_DIR))
+    autorun_software.present(app.windows.first.window)
+    autorun_software.send(:dialog).signal_emit('response', 'run')
+  end
+
+  d.step('the spawned process actually ran (not merely "did not raise")') do
+    d.check('the marker file the .autorun script writes now exists') { File.exist?(AUTORUN_MARKER) }
+  end
 end
 
 # Not removed before this point: closing the tab above does not synchronously
@@ -684,3 +894,4 @@ FileUtils.rm_rf(FIXTURES)
 FileUtils.rm_rf(ARCHIVE_SOURCE)
 FileUtils.rm_rf(TRASH_SCRATCH)
 FileUtils.rm_rf(CONFLICT_DIR)
+FileUtils.rm_rf(AUTORUN_DIR)
